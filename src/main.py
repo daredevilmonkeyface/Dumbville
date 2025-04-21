@@ -187,26 +187,27 @@ class Dumbville(QMainWindow):
     # Yearly event
     def do_yearly_event(self):
         i = random.randrange(len(self.raw_yearly_disasters))
-        event = self.expanded_yearly[i] or self.raw_yearly_disasters[i]
+        raw_event = self.raw_yearly_disasters[i]
+        event = self.expanded_yearly[i] or raw_event
         self.send_message(f"\n💥 **Yearly Disaster**: {event}")
         
-        if "famine" in event:
+        if "famine" in raw_event:
             self.food_loss(10)
             self.happiness -= 6
-        elif "baby" in event:
+        elif "baby" in raw_event:
             self.population += 2
             self.iq += 4
             self.happiness += 3
-        elif "fog" in event:
+        elif "fog" in raw_event:
             self.iq -= 5
             self.happiness -= 3
-        elif "flood" in event:
+        elif "flood" in raw_event:
             self.food_loss(8)
             self.happiness -= 4
-        elif "floating cows" in event:
+        elif "floating cows" in raw_event:
             self.happiness += 5
             self.iq -= 2
-        elif "hiccups" in event:
+        elif "hiccups" in raw_event:
             self.happiness -= 7
             self.population = max(1, self.population - 1)
 
@@ -215,10 +216,11 @@ class Dumbville(QMainWindow):
     # Hourly event
     def do_hourly_update(self, hour):
         i = random.randrange(len(self.raw_hourly_events))
-        event = self.expanded_hourly[i] or self.raw_hourly_events[i]
+        raw_event = self.raw_hourly_events[i]
+        event = self.expanded_hourly[i] or raw_event
         self.send_message(f"🕒 **Hour {hour}**: {event}")
 
-        if "gossip" in event:
+        if "gossip" in raw_event:
             effect = random.choice(["good", "bad", "weird"])
             if effect == "good":
                 self.increase_happiness(2)
@@ -227,7 +229,7 @@ class Dumbville(QMainWindow):
             elif effect == "weird":
                 self.iq -= 1
 
-        if "chickens" in event:
+        if "chickens" in raw_event:
             self.food += 2
 
         self.update_labels()
@@ -285,6 +287,8 @@ class Dumbville(QMainWindow):
 
     # Main Simulation
     def run_simulation(self):
+        self.send_message("By daredevilmonkeyface")
+
         self.year = 1
 
         def start_special_events():
