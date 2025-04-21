@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QInputDialog,
 )
 from PyQt5.QtCore import QTimer
+from PyQt5 import QtGui
 
 import random
 
@@ -26,6 +27,14 @@ class Dumbville(QMainWindow):
         self.widget.setLayout(self.layout)
         self.setCentralWidget(self.widget)
 
+        self.stats_view = QHBoxLayout()
+        self.all_stats = ["population", "food", "iq", "happiness"]
+        for stat in self.all_stats:
+            label = QLabel(f"{stat.upper()}: -")
+            self.stats_view.addWidget(label)
+            setattr(self, f"{stat}_label", label)
+        self.layout.addLayout(self.stats_view)
+
         self.main_text = QTextEdit()
         self.main_text.setReadOnly(True)
         self.main_text.acceptRichText()
@@ -33,11 +42,19 @@ class Dumbville(QMainWindow):
 
         self.init_game()
         self.run_simulation()
+
+    def update_labels(self):
+        for stat in self.all_stats:
+            value = getattr(self, stat)
+            label = getattr(self, f"{stat}_label")
+            t = f"{stat.upper()}: {value}"
+            label.setText(t)
     
     def send_message(self, message):
         t = self.main_text.toMarkdown()
         t += message
         self.main_text.setMarkdown(t)
+        self.main_text.moveCursor(QtGui.QTextCursor.End)
 
     def receive_input(self, prompt):
         text, ok = QInputDialog.getText(self, "Select an Option", prompt)
@@ -92,20 +109,25 @@ class Dumbville(QMainWindow):
     # Functions to change stats
     def increase_happiness(self, amount):
         self.happiness += amount
+        self.update_labels()
 
     def decrease_happiness(self, amount):
         self.happiness -= amount
+        self.update_labels()
 
     def decrease_iq(self, amount):
         self.iq -= amount
+        self.update_labels()
 
     def food_loss(self, amount):
         self.food = max(0, self.food - amount)
+        self.update_labels()
 
     def random_disaster(self):
         self.population = max(0, self.population - 2)
         self.happiness -= 5
         self.iq -= 4
+        self.update_labels()
 
     # Yearly event
     def do_yearly_event(self):
@@ -132,6 +154,8 @@ class Dumbville(QMainWindow):
             self.happiness -= 7
             self.population = max(1, self.population - 1)
 
+        self.update_labels()
+
     # Hourly event
     def do_hourly_update(self, hour):
         event = random.choice(self.hourly_events)
@@ -148,6 +172,8 @@ class Dumbville(QMainWindow):
 
         if "chickens" in event:
             self.food += 2
+
+        self.update_labels()
 
     # Weather
     def do_weather(self):
@@ -176,6 +202,8 @@ class Dumbville(QMainWindow):
         else:
             self.send_message("😐 You stood there doing nothing. Volcano got bored and wandered off.")
 
+        self.update_labels()
+
         self.send_message("\n👽 An alien arrives and asks to attend Dumbville Elementary.")
         self.send_message("1: Welcome them with a muffin basket")
         self.send_message("2: Challenge them to an IQ test")
@@ -195,6 +223,8 @@ class Dumbville(QMainWindow):
             self.decrease_happiness(6)
         else:
             self.send_message("🤖 The alien got bored and turned into a cow.")
+
+        self.update_labels()
 
     # Main Simulation
     def run_simulation(self):
@@ -217,13 +247,14 @@ class Dumbville(QMainWindow):
                 def run_hourly_updates(hour=1):
                     if hour <= 24:
                         self.do_hourly_update(hour)
-                        QTimer.singleShot(1000, lambda: run_hourly_updates(hour + 1))  # Wait 1 second before the next hour
+                        QTimer.singleShot(100, lambda: run_hourly_updates(hour + 1))  # Wait before the next hour
                     else:
                         self.do_yearly_event()
                         self.food -= self.population
                         if self.food < 0:
                             self.food = 0
                             self.happiness -= 10
+                            self.update_labels()
                             self.send_message("⚠️ Not enough food! People are sad.")
 
                         self.send_message(f"\n📊 End of Year {self.year}:")
