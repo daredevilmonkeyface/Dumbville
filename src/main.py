@@ -10,10 +10,40 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QInputDialog,
 )
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QObject, QRunnable, QThreadPool, pyqtSignal
 from PyQt5 import QtGui
 
 import random
+import requests
+
+YEAR_DELAY = 1000
+HOUR_DELAY = 100
+# ^^ change these to change the amount of time (ms) after each hour and after each year
+
+# --- Worker for background text expansion ---
+class WorkerSignals(QObject):
+    finished = pyqtSignal(int, str)
+
+class ExpandWorker(QRunnable):
+    def __init__(self, index, text, signal):
+        super().__init__()
+        self.index = index
+        self.text = text
+        self.signal = signal
+
+    def run(self):
+        instr = (
+            "Process the following text, by adding emojis and markdown,"
+            " as well as adding funny details."
+            " Keep the response within one short sentence."
+            " Do not remove details from the original prompt."
+        )
+        # blocking HTTP call in worker thread
+        res = requests.get(f"https://text.pollinations.ai/{instr}\n\n{self.text}")
+        while res.status_code != 200:
+            res = requests.get(f"https://text.pollinations.ai/{instr}\n\n{self.text}")
+        r = "---\nPowered by Pollinations.AI free text APIs. [Support our mission](https://pollinations.ai/redirect/kofi) to keep AI accessible for everyone."
+        self.signal.finished.emit(self.index, res.text.replace(r, "").replace("—", " - "))
 
 class Dumbville(QMainWindow):
     def __init__(self):
@@ -73,7 +103,7 @@ class Dumbville(QMainWindow):
         self.special_events_triggered = False  # Track if special events already happened
 
         # Yearly disasters
-        self.yearly_disasters = [
+        raw_yearly_disasters = [
             "A great cheese famine struck the village.",
             "A baby was born with the power to shoot lightning. Mixed reactions.",
             "A mysterious fog rolled in, people forgot how doors work.",
@@ -83,7 +113,7 @@ class Dumbville(QMainWindow):
         ]
 
         # Hourly randomness
-        self.hourly_events = [
+        raw_hourly_events = [
             "Someone mistook a scorpion for their grandma.",
             "The chickens formed a heavy metal band.",
             "Gossip: Villager Zed claims the moon is his granny.",
@@ -97,6 +127,24 @@ class Dumbville(QMainWindow):
             "Gossip: Someone legally changed their name to 2378rtgyuf9t3e6gqi7yew890g29ehqyqyeheuij",
         ]
 
+        # Store raw & expanded placeholders
+        self.raw_yearly_disasters = raw_yearly_disasters
+        self.expanded_yearly = [None] * len(raw_yearly_disasters)
+        self.raw_hourly_events = raw_hourly_events
+        self.expanded_hourly = [None] * len(raw_hourly_events)
+
+        # Setup signals & workers
+        self.yearly_signals = WorkerSignals()
+        self.yearly_signals.finished.connect(self.handle_yearly_result)
+        for i, txt in enumerate(raw_yearly_disasters):
+            QThreadPool.globalInstance().start(ExpandWorker(i, txt, self.yearly_signals))
+
+        self.hourly_signals = WorkerSignals()
+        self.hourly_signals.finished.connect(self.handle_hourly_result)
+        for i, txt in enumerate(raw_hourly_events):
+            QThreadPool.globalInstance().start(ExpandWorker(i, txt, self.hourly_signals))
+
+
         # Weather effects
         self.weather_conditions = [
             ("Sunny", lambda: self.increase_happiness(3)),
@@ -105,6 +153,13 @@ class Dumbville(QMainWindow):
             ("Snowy", lambda: self.decrease_iq(3)),
             ("Meteor Shower", lambda: self.random_disaster()),
         ]
+
+    # Callbacks for worker results
+    def handle_yearly_result(self, idx, expanded):
+        self.expanded_yearly[idx] = expanded
+
+    def handle_hourly_result(self, idx, expanded):
+        self.expanded_hourly[idx] = expanded
 
     # Functions to change stats
     def increase_happiness(self, amount):
@@ -131,8 +186,9 @@ class Dumbville(QMainWindow):
 
     # Yearly event
     def do_yearly_event(self):
-        event = random.choice(self.yearly_disasters)
-        self.send_message(f"\n💥 Yearly Disaster: {event}")
+        i = random.randrange(len(self.raw_yearly_disasters))
+        event = self.expanded_yearly[i] or self.raw_yearly_disasters[i]
+        self.send_message(f"\n💥 **Yearly Disaster**: {event}")
         
         if "famine" in event:
             self.food_loss(10)
@@ -158,8 +214,9 @@ class Dumbville(QMainWindow):
 
     # Hourly event
     def do_hourly_update(self, hour):
-        event = random.choice(self.hourly_events)
-        self.send_message(f"🕒 Hour {hour}: {event}")
+        i = random.randrange(len(self.raw_hourly_events))
+        event = self.expanded_hourly[i] or self.raw_hourly_events[i]
+        self.send_message(f"🕒 **Hour {hour}**: {event}")
 
         if "gossip" in event:
             effect = random.choice(["good", "bad", "weird"])
@@ -178,51 +235,51 @@ class Dumbville(QMainWindow):
     # Weather
     def do_weather(self):
         condition, effect = random.choice(self.weather_conditions)
-        self.send_message(f"\n🌤️ Weather Today: {condition}")
+        self.send_message(f"\n🌤️ **Weather Today**: {condition}")
         effect()
 
     # Special Events (run once)
     def run_special_events(self):
-        self.send_message("\n🌋 A volcano near Dumbville has started... voting?")
+        self.send_message("---\n## 🌋 A volcano near Dumbville has started... voting?")
         self.send_message("1: Ask what it's voting on")
         self.send_message("2: Build a statue to gain favor")
         self.send_message("3: Ignore it, volcanoes are dumb")
 
         choice = self.receive_input("Choose your action (1-3): ")
         if choice == "1":
-            self.send_message("🗳️ It was voting on whether to erupt. You accidentally swayed it to 'no'! Yay!")
+            self.send_message("### 🗳️ It was voting on whether to erupt. You accidentally swayed it to 'no'! Yay!")
             self.increase_happiness(5)
         elif choice == "2":
-            self.send_message("🗿 The volcano is pleased. It sends down warm lava hugs. Slightly burns crops.")
+            self.send_message("### 🗿 The volcano is pleased. It sends down warm lava hugs. Slightly burns crops.")
             self.increase_happiness(2)
             self.food_loss(5)
         elif choice == "3":
-            self.send_message("🌋 It erupts out of spite. Classic volcano behavior.")
+            self.send_message("### 🌋 It erupts out of spite. Classic volcano behavior.")
             self.random_disaster()
         else:
-            self.send_message("😐 You stood there doing nothing. Volcano got bored and wandered off.")
+            self.send_message("### 😐 You stood there doing nothing. Volcano got bored and wandered off.")
 
         self.update_labels()
 
-        self.send_message("\n👽 An alien arrives and asks to attend Dumbville Elementary.")
+        self.send_message("---\n## 👽 An alien arrives and asks to attend Dumbville Elementary.")
         self.send_message("1: Welcome them with a muffin basket")
         self.send_message("2: Challenge them to an IQ test")
         self.send_message("3: Panic and run in circles")
 
         choice = self.receive_input("Choose your action (1-3): ")
         if choice == "1":
-            self.send_message("🧁 They loved the muffins and taught quantum agriculture.")
+            self.send_message("### 🧁 They loved the muffins and taught quantum agriculture.")
             self.iq += 5
             self.food += 10
         elif choice == "2":
-            self.send_message("🧠 They scored 9000. Villagers feel dumb but inspired.")
+            self.send_message("### 🧠 They scored 9000. Villagers feel dumb but inspired.")
             self.iq += 3
             self.happiness -= 2
         elif choice == "3":
-            self.send_message("😵 Chaos ensued. Alien confused, left with mild disgust.")
+            self.send_message("### 😵 Chaos ensued. Alien confused, left with mild disgust.")
             self.decrease_happiness(6)
         else:
-            self.send_message("🤖 The alien got bored and turned into a cow.")
+            self.send_message("### 🤖 The alien got bored and turned into a cow.")
 
         self.update_labels()
 
@@ -233,21 +290,21 @@ class Dumbville(QMainWindow):
         def start_special_events():
             self.run_special_events()
             self.special_events_triggered = True
-            QTimer.singleShot(1000, run_year)  # Wait 1 second before starting the first year
+            QTimer.singleShot(YEAR_DELAY, run_year)  # Wait before starting the first year
 
         def run_year():
             if self.population > 0 and self.iq > 0 and self.happiness > 0:
-                self.send_message(f"\n====================")
+                self.send_message(f"\n---")
                 self.send_message(f"📆 Year {self.year} Begins")
                 self.send_message(f"Population: {self.population}, Food: {self.food}, IQ: {self.iq}, Happiness: {self.happiness}")
-                self.send_message("====================")
+                self.send_message("---")
 
                 self.do_weather()
 
                 def run_hourly_updates(hour=1):
                     if hour <= 24:
                         self.do_hourly_update(hour)
-                        QTimer.singleShot(100, lambda: run_hourly_updates(hour + 1))  # Wait before the next hour
+                        QTimer.singleShot(HOUR_DELAY, lambda: run_hourly_updates(hour + 1))  # Wait before the next hour
                     else:
                         self.do_yearly_event()
                         self.food -= self.population
@@ -266,6 +323,7 @@ class Dumbville(QMainWindow):
         I made sure I understood what the code was doing and changed things to make it my own.
         I also used books and YouTube to learn along the way.
         I'm still learning Python, so I couldn't have done this completely on my own — but I had a lot of fun figuring things out. 🙂""")
+                            self.send_message("---\nPowered by Pollinations.AI free text APIs. [Support our mission](https://pollinations.ai/redirect/kofi) to keep AI accessible for everyone.")
                         else:
                             self.year += 1
                             QTimer.singleShot(1000, run_year)  # Wait 1 second before starting the next year
